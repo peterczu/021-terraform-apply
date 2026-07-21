@@ -1,255 +1,143 @@
-# Project 020 – Secure Terraform CI with GitHub Secrets
+# Project 021 – Automated Terraform Apply Pipeline with GitHub Actions
 
 ## Overview
 
-This project extends the Terraform CI pipeline by securely injecting Terraform variables into GitHub Actions using GitHub Secrets.
+This project extends the previous CI pipeline by implementing an automated Terraform deployment workflow using GitHub Actions.
 
-The objective was to eliminate interactive Terraform input, avoid committing sensitive information to source control, and build a fully automated, secure Infrastructure as Code (IaC) validation pipeline.
+The workflow authenticates to AWS using GitHub OpenID Connect (OIDC), validates the Terraform configuration, generates an execution plan, and automatically applies infrastructure changes after a successful plan stage.
 
-The pipeline authenticates to AWS using GitHub OpenID Connect (OIDC), retrieves temporary AWS credentials through AWS Security Token Service (STS), injects required Terraform variables from GitHub Secrets, and validates the infrastructure without exposing sensitive information.
+This project demonstrates a basic Continuous Delivery (CD) workflow for Infrastructure as Code.
+
+---
+
+## Architecture
+
+```
+Developer
+    │
+    ▼
+Git Push
+    │
+    ▼
+GitHub Actions
+    │
+    ├───────────────┐
+    ▼               │
+Terraform Plan      │
+    │               │
+    ▼               │
+Terraform Apply ◄───┘
+    │
+    ▼
+AWS Infrastructure
+```
 
 ---
 
 ## Project Objectives
 
-* Eliminate interactive Terraform input during CI execution.
-* Securely manage Terraform variables using GitHub Secrets.
-* Prevent sensitive credentials from being committed to Git.
-* Continue using AWS OIDC authentication.
-* Execute Terraform Plan automatically on every push.
+* Build a multi-job GitHub Actions workflow
+* Authenticate securely to AWS using GitHub OIDC
+* Validate Terraform configuration automatically
+* Generate Terraform execution plans
+* Automatically apply approved infrastructure changes
+* Eliminate the need for long-lived AWS access keys
 
 ---
 
 ## Technologies Used
 
 * Terraform
-* GitHub Actions
-* GitHub Secrets
 * AWS IAM
 * AWS STS
-* AWS OpenID Connect (OIDC)
+* GitHub Actions
+* GitHub OIDC
+* Amazon EC2
+* Amazon VPC
 * Amazon S3 Remote Backend
-* Git
 
 ---
 
-## CI/CD Workflow
+## GitHub Actions Workflow
 
-```text
-Git Push
-    │
-    ▼
-GitHub Actions
-    │
-    ▼
-OIDC Authentication
-    │
-    ▼
-AWS STS Temporary Credentials
-    │
-    ▼
-Terraform Init
-    │
-    ▼
-Terraform Format Check
-    │
-    ▼
-Terraform Validate
-    │
-    ▼
-GitHub Secrets
-    │
-    ▼
-Terraform Plan
-```
-
----
-
-## GitHub Secrets Used
-
-| Secret      | Purpose           |
-| ----------- | ----------------- |
-| KEY_NAME    | EC2 Key Pair      |
-| DB_USERNAME | Database Username |
-| DB_PASSWORD | Database Password |
-
-The workflow injects these values using Terraform's `TF_VAR_` environment variable convention.
-
-Example:
-
-```yaml
-env:
-  TF_VAR_key_name: ${{ secrets.KEY_NAME }}
-  TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
-  TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
-```
-
-Terraform automatically maps these values to the corresponding input variables.
-
----
-
-## Security Improvements
-
-Before this project:
-
-* Terraform requested interactive input.
-* CI pipelines stalled waiting for variable input.
-* Sensitive variables risked being hardcoded.
-
-After this project:
-
-* No interactive prompts.
-* No secrets committed to Git.
-* Sensitive values stored securely in GitHub Secrets.
-* Terraform receives variables automatically during pipeline execution.
-
----
-
-## Problems Encountered
-
-### 1. Interactive Terraform Variables
-
-#### Issue
-
-Terraform Plan paused waiting for:
-
-* key_name
-* db_username
-* db_password
-
-#### Cause
-
-GitHub Actions cannot provide interactive terminal input.
-
-#### Solution
-
-Configured GitHub Secrets and passed them into Terraform using the `TF_VAR_` environment variable convention.
-
----
-
-### 2. Missing Required Variable
-
-#### Issue
-
-Terraform reported:
-
-```text
-No value for required variable:
-instance_type
-```
-
-#### Cause
-
-The variable had no default value and was not sensitive.
-
-#### Solution
-
-Added a Terraform default:
-
-```hcl
-variable "instance_type" {
-  type    = string
-  default = "t3.micro"
-}
-```
-
-This removed unnecessary configuration from the CI pipeline.
-
----
-
-### 3. Terraform Format Check Failure
-
-#### Issue
-
-GitHub Actions failed during:
-
-```text
-terraform fmt -check
-```
-
-#### Cause
-
-Terraform code formatting did not match Terraform's standard formatting rules.
-
-#### Solution
-
-Executed:
-
-```bash
-terraform fmt
-```
-
-Committed the formatting changes and reran the workflow successfully.
-
----
-
-## Final Pipeline Result
-
-Successful pipeline execution:
+### Job 1
 
 * Checkout Repository
+* Configure AWS Credentials (OIDC)
 * Setup Terraform
-* Configure AWS Credentials
 * Terraform Init
 * Terraform Format Check
 * Terraform Validate
 * Terraform Plan
 
-Terraform completed with:
+### Job 2
 
-```text
-No changes.
-Your infrastructure matches the configuration.
+Runs only after the successful completion of the Plan job.
+
+* Checkout Repository
+* Configure AWS Credentials
+* Setup Terraform
+* Terraform Init
+* Terraform Apply
+
+The workflow uses the `needs:` keyword to ensure Terraform Apply executes only after a successful Terraform Plan.
+
+---
+
+## Repository Structure
+
+```
+.
+├── .github/
+│   └── workflows/
+│       └── terraform.yml
+├── backend.tf
+├── iam.tf
+├── main.tf
+├── provider.tf
+├── secrets.tf
+├── variables.tf
+├── outputs.tf
+└── README.md
 ```
 
-This confirms that:
+---
 
-* Terraform configuration
-* Remote Terraform State
-* AWS Infrastructure
+## Security
 
-are fully synchronized.
+This project follows several security best practices:
+
+* GitHub OpenID Connect (OIDC) authentication
+* No long-lived AWS access keys
+* Temporary STS credentials
+* GitHub Secrets for sensitive Terraform variables
+* Remote Terraform state stored in Amazon S3
 
 ---
 
 ## Lessons Learned
 
-This project reinforced several important DevOps principles:
+During development I learned several practical DevOps concepts:
 
-* Separate secrets from configuration.
-* CI/CD pipelines must never require interactive input.
-* GitHub Secrets provide secure variable injection.
-* Terraform automatically maps `TF_VAR_` variables.
-* Infrastructure should always be validated before deployment.
-* Automated formatting improves code consistency across teams.
-
----
-
-## Skills Demonstrated
-
-* Infrastructure as Code (Terraform)
-* Secure Secret Management
-* GitHub Actions
-* GitHub Secrets
-* AWS OIDC Authentication
-* AWS STS Temporary Credentials
-* Terraform Variable Management
-* Terraform CI/CD
-* Infrastructure Validation
-* DevOps Troubleshooting
+* GitHub Actions jobs execute on separate runners.
+* Each job requires its own checkout, authentication, and Terraform initialization.
+* Terraform automatically detects changes caused by updated AMIs when using `most_recent = true`.
+* Temporary AWS STS credentials are generated for every workflow execution.
+* Proper Git repository organization is important when managing multiple Infrastructure as Code projects.
 
 ---
 
 ## Future Improvements
 
-* Store database credentials in AWS Secrets Manager instead of GitHub Secrets.
-* Add Terraform Apply with manual approval.
-* Add security scanning using Checkov or TFLint.
-* Add Pull Request validation.
-* Implement least-privilege IAM policies.
+* Add manual deployment approval using GitHub Environments.
+* Introduce reusable GitHub Actions workflows.
+* Add Terraform security scanning.
+* Integrate automated testing before deployment.
 
 ---
 
-## Outcome
+## Author
 
-Successfully built a production-style Terraform CI pipeline that securely injects Terraform variables using GitHub Secrets while authenticating to AWS through GitHub OIDC and AWS STS. The pipeline validates infrastructure automatically without exposing sensitive credentials or requiring manual input.
+**Peter Madueke**
+
+AWS • Terraform • GitHub Actions • Infrastructure as Code
